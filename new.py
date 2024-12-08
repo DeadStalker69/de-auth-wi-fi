@@ -149,3 +149,14 @@ if password_match:
     print("="*40 + "\033[0m")
 else:
     print("Password not found. Try using a different wordlist.")
+
+print("Restoring Wi-Fi adapter to managed mode...")
+subprocess.run(["sudo", "airmon-ng", "stop", hacknic + "mon"])
+
+# Verify the mode change
+iwconfig_result = subprocess.run(["iwconfig"], capture_output=True, text=True).stdout
+if hacknic in iwconfig_result:
+    print(f"{hacknic} is now in managed mode.")
+else:
+    print(f"Failed to restore {hacknic} to managed mode. Please check manually.")
+
