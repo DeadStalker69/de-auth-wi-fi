@@ -71,6 +71,8 @@ hacknic = available_interfaces[int(wifi_interface_choice)]
 if not hacknic.endswith("mon"):
     print("Wi-Fi adapter connected! Killing conflicting processes...")
     subprocess.run(["sudo", "airmon-ng", "check", "kill"])
+    print("Disabling NetworkManager for the attack interface...")
+    subprocess.run(["sudo", "nmcli", "dev", "set", hacknic, "managed", "no"])
     print(f"Putting {hacknic} into monitor mode...")
     subprocess.run(["sudo", "airmon-ng", "start", hacknic])
 
@@ -190,9 +192,11 @@ else:
 # Revert to managed mode
 print("Restoring Wi-Fi adapter to managed mode...")
 subprocess.run(["sudo", "airmon-ng", "stop", hacknic])
+print("Re-enabling NetworkManager for the attack interface...")
+subprocess.run(["sudo", "nmcli", "dev", "set", hacknic.replace("mon", ""), "managed", "yes"])
 
 # Restart NetworkManager
-subprocess.run(["sudo", "systemctl", "restart", "NetworkManager"])
+#subprocess.run(["sudo", "systemctl", "restart", "NetworkManager"])
 
 # Verify the mode change
 iwconfig_result = subprocess.run(["iwconfig"], capture_output=True, text=True).stdout
